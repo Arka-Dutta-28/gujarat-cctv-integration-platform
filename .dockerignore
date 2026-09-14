@@ -1,0 +1,28 @@
+# Build context hygiene. Without this, `docker build` uploads every generated
+# test clip and the OSRM extract — gigabytes — into the context for images that
+# use none of it, and every rebuild pays for it again.
+#
+# `data/` is excluded wholesale and the few small derived files the images
+# actually need are re-admitted below, so a new large artefact dropped into
+# data/ cannot silently start bloating the context.
+data/
+!data/ocr-confusion.json
+!data/reid-dinov2-mean.json
+!data/gazetteer
+!data/gazetteer/**
+
+.git/
+.venv/
+.venv-*/
+node_modules/
+web/node_modules/
+web/dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+*.mp4
+*.mkv
+*.osm.pbf

@@ -1,0 +1,98 @@
+# MediaMTX — the adapter layer's view of "a camera".
+#
+# The simulator publishes each looped clip in over RTSP; the browser pulls the
+# same stream out over WebRTC. That means the RTSP adapter path is genuinely
+# exercised by the simulated farm rather than stubbed, which is the whole reason
+# for running a real media server instead of serving files to the UI.
+
+logLevel: info
+logDestinations: [stdout]
+
+readTimeout: 30s
+writeTimeout: 30s
+writeQueueSize: 512
+udpMaxPayloadSize: 1472
+
+# --- control API: the health prober (M1) reads stream state from here ---
+api: yes
+apiAddress: :9997
+
+metrics: yes
+metricsAddress: :9998
+
+# --- access control ---
+# MediaMTX's built-in default restricts the control API to 127.0.0.1 as seen by
+# the server, which through Docker port mapping means every request arrives from
+# the bridge gateway and is rejected. Widen it to private ranges only: the health
+# prober (M1) and the acceptance test both read stream state from this API.
+#
+# No password is set here on purpose. Committing one would violate invariant 5,
+# and the API is not reachable off the private network. A hosted deployment (M8)
+# puts real credentials in front of it via the environment.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+# --- ingest: the simulator publishes here ---
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp, udp]
+rtspAuthMethods: [basic]
+
+# --- egress: the live view (M2) consumes these ---
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsAlwaysRemux: no
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsAllowOrigin: '*'
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: '*'
+webrtcLocalUDPAddress: :8189
+# Advertise only an address the *browser* can actually reach.
+#
+# Left to itself MediaMTX offers its own interface address, which inside Docker
+# is the container's bridge IP. A browser on the host can route to that IP, so
+# the candidate looks valid and ICE even completes a check or two — and then
+# the session dies, because almost nothing gets through: 66 STUN requests for 2
+# responses, measured. The published port on the host is the path that works.
+#
+# Overridden per deployment via MTX_WEBRTCADDITIONALHOSTS (see docker-compose):
+# a hosted instance must advertise the address its operators reach it on.
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: [127.0.0.1]
+# Browser and media server share a host in dev, so no external ICE server is
+# needed. A hosted deployment (M8) adds a STUN/TURN entry here.
+webrtcICEServers2: []
+
+rtmp: no
+srt: no
+
+pathDefaults:
+  # Streams are published by the simulator and are not recorded here: the
+  # recording/retention story belongs to the camera owner's DVR, and we pull
+  # video on demand rather than centralising it (edge-first, per README.md).
+  record: no
+  sourceOnDemand: no
+
+paths:
+  # Camera paths are created dynamically as the simulator publishes to them,
+  # because the set of cameras is whatever the registry says it is. Hardcoding
+  # cam-01..cam-50 here would put a second source of truth next to the registry
+  # and break invariant 4.
+  all_others:

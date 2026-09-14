@@ -1,0 +1,29 @@
+# Cloudflare Tunnel. Use with the hosted overlay:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                  -f docker-compose.hosted.yml -f docker-compose.tunnel.yml \
+#                  up -d --build
+#
+# Gives the platform a public HTTPS address with no rented server, no open
+# inbound port and no certificate to renew: `cloudflared` dials *out* to
+# Cloudflare and traffic comes back down that connection.
+#
+# Setup is in `docs/hosting.md`. In short: create a tunnel in the Cloudflare
+# dashboard, point its public hostname at `http://web:80`, and put the token in
+# `.env` as TUNNEL_TOKEN.
+#
+# The trade this makes: the machine running it must stay on and online for the
+# whole evaluation window. There is no cached copy — when the machine sleeps,
+# the URL stops answering.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?create a tunnel and paste its token — see docs/hosting.md}"
+    depends_on:
+      - web
+    restart: always
+    # It only needs to reach `web`, which is the single front door. Everything
+    # else is behind nginx on the compose network and is not routable from here.

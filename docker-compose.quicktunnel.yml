@@ -1,0 +1,44 @@
+# Cloudflare **quick** tunnel — no account, no domain, no token.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hosted.yml \
+#                  -f docker-compose.quicktunnel.yml up -d --build
+#
+# `cloudflared tunnel --url` dials out to Cloudflare and is handed a random
+# `*.trycloudflare.com` hostname, printed in its logs. Nothing to configure and
+# nothing to register, which is the whole appeal.
+#
+# WHY THIS IS NOT `docker-compose.tunnel.yml`
+#
+# That file runs a *named* tunnel: it needs a Cloudflare account, a domain on
+# it, and a token, and it gives back a hostname you choose which survives every
+# restart. This file needs none of those and gives back a hostname you do not
+# choose which survives none of them.
+#
+# THE CATCH, STATED PLAINLY BECAUSE IT DECIDES WHETHER THIS IS USABLE
+#
+#   * **The URL changes every time this container restarts.** A link submitted
+#     on Monday is dead on Tuesday. This is fine for proving the chain works
+#     and for a demo you are present at; it is not fine for anything printed in
+#     a submission. Use `docker-compose.tunnel.yml` for that.
+#   * **No authentication in front of it.** Anyone with the URL reaches the
+#     login page — which is why the hosted overlay turns `AUTH_REQUIRED` on and
+#     seeds a read-only demo account. Do not run this overlay without that one.
+#   * **Rate limited and unsupported.** Cloudflare offers quick tunnels for
+#     testing and says so. They are throttled and can be withdrawn.
+#
+# `PUBLIC_ORIGIN` has to be the tunnel's hostname, and the hostname is not
+# known until the tunnel is running — so it cannot be set in advance. The
+# sequence is: bring this up, read the URL from the logs, put it in `.env`,
+# then `docker compose ... up -d relay` to pick it up. `make quicktunnel-url`
+# does the reading. Only the relay needs it: the front end uses same-origin
+# relative URLs, so nothing is baked at build time.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    # `web` is nginx on the compose network — the single front door. Everything
+    # else sits behind it and is not routable from here.
+    command: tunnel --no-autoupdate --url http://web:80
+    depends_on:
+      - web
+    restart: always

@@ -1,0 +1,64 @@
+# Production overlay. Use with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this changes, and why each one matters for an instance reachable from a
+# network rather than from localhost:
+#
+#   * Authentication is required. The base file leaves it off so that `docker
+#     compose up` works from a clean checkout with no accounts and the
+#     acceptance tests run unchanged; nothing reachable from outside should run
+#     that way.
+#   * Nothing but the web app and the API is published. In the base file the
+#     database, the media server's control API and Redpanda bind to the host
+#     because that is how you develop; on a hosted instance they are reachable
+#     only from the compose network.
+#   * The media server advertises its real address for WebRTC. Left alone it
+#     offers its Docker bridge IP, which a remote browser can route to — so ICE
+#     looks valid and then starves. Measured: 66 STUN requests, 2 responses.
+#
+# Everything here still reads its secrets from the environment. This file is
+# committed; `.env` is not.
+
+services:
+  api:
+    environment:
+      AUTH_REQUIRED: "true"
+      AUTH_SECRET: "${AUTH_SECRET:?generate one with openssl rand -hex 32}"
+      # The browser talks to the API from the public origin, not from localhost.
+      API_CORS_ORIGINS: "${PUBLIC_WEB_ORIGIN:?set the public web origin}"
+    restart: always
+
+  web:
+    environment:
+      VITE_API_BASE: "${PUBLIC_API_ORIGIN:?set PUBLIC_API_ORIGIN}"
+      VITE_MEDIAMTX_BASE: "${PUBLIC_MEDIA_ORIGIN:?set PUBLIC_MEDIA_ORIGIN}"
+    restart: always
+
+  mediamtx:
+    environment:
+      # The address a remote browser can actually reach for WebRTC media.
+      MTX_WEBRTCADDITIONALHOSTS: "${PUBLIC_MEDIA_HOST:?set PUBLIC_MEDIA_HOST}"
+    restart: always
+
+  db:
+    # Not published. The only things that need the database are on this network.
+    ports: !override []
+    restart: always
+
+  redpanda:
+    ports: !override []
+    restart: always
+
+  relay:
+    restart: always
+
+  prober:
+    restart: always
+
+  simulator:
+    # Kept on the hosted instance on purpose: the demo account needs cameras
+    # producing sightings for the platform to be worth looking at. Swap
+    # `stream_ref` in the registry for real feeds and this service is what stops
+    # being needed — no application code moves (invariant 4).
+    restart: always

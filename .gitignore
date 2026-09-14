@@ -1,0 +1,72 @@
+# --- secrets: invariant 5, never commit credentials ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- node / web ---
+node_modules/
+web/dist/
+.vite/
+
+# --- data: large binaries stay out of the submission artifact ---
+data/test-videos/*
+!data/test-videos/.gitkeep
+data/osrm/
+data/crops/
+# Saved catalogue responses: useful working state, not a submission artifact,
+# and the grid's shape may change between sessions.
+data/grid/
+data/anpr-pairs.json
+*.mp4
+*.mkv
+*.osm.pbf
+
+# --- runtime ---
+.DS_Store
+*.log
+
+# Bootstrap/artifact archives — their contents live in docs/ and db/ already
+*.zip
+web/*.tsbuildinfo
+
+# Training corpus: real plate crops harvested from live footage. Personal data
+# under DPDP, held under an explicit purpose record with a delete-by date
+# (data/corpus/PURPOSE.md). It is training material, not a submission artifact,
+# and must never reach a commit.
+data/corpus/
+
+# --- working notes and assistant tooling: never published ---
+# The published documentation is README.md plus docs/.
+PROGRESS.md
+BUILT.md
+ROADMAP.md
+ENGINEERING.md
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+.claude/
+.playwright-mcp/
+.cursor/
+.cursorrules
+.aider*
+.continue/
+.codex/
+.windsurf*
+.vscode/
+.idea/
+*.swp
+*.rej
+*.orig
+scratch/

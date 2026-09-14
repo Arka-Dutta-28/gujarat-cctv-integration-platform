@@ -1,0 +1,99 @@
+# ANPR worker — learned-model path.
+#
+# Built on the ultralytics image because it already carries torch, torchvision,
+# OpenCV and ultralytics; pip-installing torch is ~3 GB from PyPI and that is a
+# fragile download to depend on during demo setup.
+#
+# Same worker, same pipeline, different backends. Which one produced a number is
+# reported with the number.
+FROM ultralytics/ultralytics:latest
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ANPR_MODEL_DIR=/data/models \
+    YOLO_CONFIG_DIR=/data/models \
+    MPLCONFIGDIR=/tmp/mpl \
+    ANPR_VEHICLE_BACKEND=auto \
+    ANPR_OCR_BACKEND=auto
+
+WORKDIR /app
+
+# This network intercepts plain HTTP and redirects it to a captive-portal
+# login page, so apt over http fails with a truncated index. HTTPS is not
+# intercepted. Harmless everywhere else, and a good default regardless: apt
+# metadata is signed, but the URLs it fetches should not be readable in transit
+# on a police network.
+RUN set -eux; \
+    sed -i -e 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' \
+           -e 's|http://security.ubuntu.com|https://security.ubuntu.com|g' \
+           -e 's|http://deb.debian.org|https://deb.debian.org|g' \
+           $(ls /etc/apt/sources.list /etc/apt/sources.list.d/*.sources \
+                /etc/apt/sources.list.d/*.list 2>/dev/null) 2>/dev/null || true
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr tesseract-ocr-eng libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --timeout 60 --retries 10 \
+        "psycopg>=3.2" \
+        "psycopg-pool>=3.2" \
+        "pydantic-settings>=2.5" \
+        pytesseract \
+        "fast-plate-ocr>=1.0" \
+        "open-image-models>=0.4" \
+        "lap>=0.5.12" \
+        # The plate detector and the plate-recognition network are both ONNX,
+        # and both are inert without a runtime — they log loudly and the
+        # pipeline falls back to the classical locator and Tesseract. The CPU
+        # runtime is 16 MB against ~250 MB for the GPU one, and these two models
+        # are a few megabytes each, so it is the better trade here.
+        onnxruntime \
+    && mkdir -p /data/models /data/crops
+
+# Fetch the detector weights at build time. Ultralytics otherwise downloads
+# them on first inference — 5.4 MB over whatever network the demo is on, while
+# an evaluator watches — and its ByteTrack dependency (`lap`) triggers a pip
+# install mid-frame, which cost 86 seconds the first time this ran.
+RUN cd /data/models && python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" || \
+    echo "weights not pre-fetched; will download on first use"
+
+# The plate readers (14 Sep 2026): docTR, the default, and PaddleOCR-VL, which
+# runs only on cameras an operator boosts (`/api/ocr-boosts`) because it needs
+# this GPU. python-doctr goes in with --no-deps so it cannot replace the base
+# image's OpenCV. Both models' weights are baked in, outside HOME, which compose
+# points at the model volume: a 1.8 GB download at the moment an operator asks
+# for a boost is not an option.
+ENV DOCTR_CACHE_DIR=/opt/doctr \
+    HF_HOME=/opt/hf
+RUN pip install --no-cache-dir --timeout 120 --retries 10 \
+        "transformers>=5.5" scipy h5py pypdfium2 pyclipper shapely langdetect rapidfuzz \
+        anyascii validators \
+    && pip install --no-cache-dir --no-deps python-doctr \
+    && python -c "from doctr.models import recognition_predictor; recognition_predictor('parseq', pretrained=True)" \
+    && python -c "from huggingface_hub import snapshot_download; snapshot_download('PaddlePaddle/PaddleOCR-VL')" \
+    && python -c "import cv2, transformers, doctr; print('readers ready; cv2', cv2.__version__, 'transformers', transformers.__version__)"
+# The appearance model for linking sightings of one vehicle across cameras
+# (services/anpr/reid.py, linking.py). Its own layer, so adding it did not
+# invalidate the 1.8 GB reader layer above.
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('facebook/dinov2-small')"
+# Everything the readers need is in the image; never reach for the hub at run time.
+ENV HF_HUB_OFFLINE=1
+
+COPY services /app/services
+# The probe and evaluation tools ship with the image: when plates are not
+# being read, the first question is whether it is the pipeline or the
+# plumbing, and that has to be answerable inside the container.
+COPY scripts /app/scripts
+
+# Derived reference data, versioned with the code and baked into the image.
+#
+# Every image that normalises a plate must load the *same* confusion table.
+# Invariant 3 says normalisation is applied at write time and at query time, so
+# an ANPR worker and the API holding different tables would compute different
+# join keys, and a plate written by one would not be found by the other. Baking
+# the file in is what guarantees they agree; a bind mount would silently revert
+# to the built-in prior the first time someone ran without one.
+COPY data/ocr-confusion.json /app/data/ocr-confusion.json
+COPY data/reid-dinov2-mean.json /app/data/reid-dinov2-mean.json
+COPY data/gazetteer /app/data/gazetteer
+
+CMD ["python", "-m", "services.anpr.worker"]

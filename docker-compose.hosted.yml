@@ -1,0 +1,117 @@
+# Single-origin hosted deployment. Use with the base file only:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hosted.yml up -d --build
+#
+# Deliberately *not* stacked on `docker-compose.prod.yml`. That file describes a
+# three-origin deployment — separate hostnames for the app, the API and the
+# media server — and requires each of those origins as a variable. Compose
+# interpolates a required variable before an override can remove it, so
+# stacking would demand values for three hostnames this deployment does not
+# have. This file therefore carries everything `prod` does, and differs where it
+# should.
+#
+# What this is, and why each part:
+#
+#   * **Authentication on.** The base file leaves it off so a clean checkout
+#     comes up with no accounts and the acceptance tests run unchanged. Nothing
+#     reachable from outside should run that way.
+#   * **One origin.** nginx serves the built app and proxies `/api` and
+#     `/media` to the services behind it. One hostname, one certificate, and no
+#     CORS policy to get wrong.
+#   * **A real web build.** The base image runs `vite dev` — correct for
+#     development, wrong for anything a stranger can open: unminified, with a
+#     hot-reload websocket, and explicitly not meant to face a network.
+#   * **HLS, not WebRTC.** WebRTC media rides UDP. An HTTP-only path in front of
+#     the platform — a tunnel, a corporate proxy, the "restricted network" the
+#     integration contract names — carries the WHEP signalling perfectly and
+#     then starves the ICE negotiation: the session establishes and no frame
+#     ever paints. HLS is plain HTTP on the same origin and simply works, at the
+#     cost of a second or two of latency, narrowed by the low-latency HLS
+#     settings in `infra/mediamtx/mediamtx.yml`.
+#   * **Nothing but nginx listens.** The database, the media server's control
+#     API and Redpanda bind to the host in the base file because that is how you
+#     develop. Here they are reachable only on the compose network.
+#
+# On a host with a public IP and open UDP, `docker-compose.prod.yml` is the
+# better choice: WebRTC is the better transport whenever it can actually reach
+# the browser.
+#
+# Secrets come from the environment. This file is committed; `.env` is not.
+
+services:
+  web:
+    # A distinct image name, not an override of the development one.
+    #
+    # Both files build a service called `web`, so without this they write the
+    # same tag — and switching back to the base stack then starts the nginx
+    # image with the dev server's `npm run dev` command, which fails with
+    # "npm: not found" and leaves the container restarting forever. Two
+    # deployments, two images.
+    image: cctv-web-hosted
+    build:
+      # The repo root, because the nginx configuration lives in infra/ with the
+      # rest of the infrastructure rather than inside the front-end tree.
+      context: .
+      dockerfile: web/Dockerfile.prod
+    # nginx's own entrypoint, not the dev server's `npm run dev`.
+    command: !override ["nginx", "-g", "daemon off;"]
+    # The base file bind-mounts the source for hot reload. Here the app is a
+    # build artifact inside the image; mounting source over it would shadow the
+    # served directory with files nginx cannot use.
+    volumes: !override []
+    # Baked at build time by the Dockerfile — the app uses same-origin relative
+    # URLs, so there is nothing to inject at run time.
+    environment: !override {}
+    ports: !override
+      # Bound to loopback by default: the tunnel reaches it over the compose
+      # network, and a hosted instance should not also be listening on every
+      # interface of the machine. Set HOST_BIND=0.0.0.0 to expose it directly.
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-8080}:80"
+    depends_on:
+      - api
+      - mediamtx
+    restart: always
+
+  api:
+    environment:
+      AUTH_REQUIRED: "true"
+      AUTH_SECRET: "${AUTH_SECRET:?generate one with openssl rand -hex 32}"
+      # Same origin, so the browser never makes a cross-origin request. Left
+      # empty deliberately rather than set to the public origin: an allowlist
+      # that is never consulted is a thing that can silently rot.
+      API_CORS_ORIGINS: ""
+    ports: !override []
+    restart: always
+
+  relay:
+    environment:
+      MEDIA_TRANSPORT: "hls"
+      # Where the *browser* fetches playlists and segments — through nginx on
+      # the public origin, not the container's own address.
+      MEDIAMTX_PUBLIC_URL: "${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN, e.g. https://cctv.example.com}/media"
+    restart: always
+
+  mediamtx:
+    ports: !override []
+    restart: always
+
+  db:
+    ports: !override []
+    restart: always
+
+  redpanda:
+    ports: !override []
+    restart: always
+
+  prober:
+    restart: always
+
+  anpr:
+    restart: always
+
+  simulator:
+    # Kept on a hosted instance on purpose: the demo account needs cameras
+    # producing sightings for the platform to be worth looking at. Swap
+    # `stream_ref` in the registry for real feeds and this is the service that
+    # stops being needed — no application code moves (invariant 4).
+    restart: always

@@ -1,0 +1,57 @@
+# An edge analytics node — the same image, on somebody else's machine.
+#
+#   docker compose -f docker-compose.edge.yml up -d
+#
+# This file exists to make one architectural claim *demonstrable* rather than
+# merely stated: that the analytics unit is one container image which runs
+# unchanged at the edge, at a district, or in the state data centre, and that
+# scaling is a count rather than a redesign.
+#
+# It runs the ANPR worker and nothing else. No database, no API, no media
+# server, no simulator — those live at the centre. What crosses the link is
+# ~250 bytes per vehicle, which is the whole edge-first argument in one file.
+#
+# It needs exactly two things:
+#
+#   DATABASE_URL   the central database, reachable from here
+#   ANPR_SHARDS    the total number of workers across ALL machines
+#
+# There is no orchestrator and no per-node configuration. Each worker claims the
+# lowest free shard with a Postgres advisory lock, so a node in a junction
+# cabinet and a replica in the data centre coordinate through the database they
+# already share. A worker that dies returns its shard the instant its connection
+# drops — no timeout, no heartbeat, no reaper.
+#
+# Verified 31 Aug 2026: three workers claimed shards 0, 1 and 2 and split an
+# 81-camera estate into 27 cameras each, with no configuration distinguishing
+# them.
+
+services:
+  anpr:
+    build:
+      context: .
+      dockerfile: services/anpr/Dockerfile
+    environment:
+      # The centre. Over a WAN this is the only address an edge node needs.
+      DATABASE_URL: "${DATABASE_URL:?point this at the central database}"
+      # Must match the total across every machine, or shards go unprocessed.
+      ANPR_SHARDS: "${ANPR_SHARDS:?total worker count across all machines}"
+      ANPR_VEHICLE_BACKEND: "${ANPR_VEHICLE_BACKEND:-motion}"
+      ANPR_OCR_BACKEND: "${ANPR_OCR_BACKEND:-auto}"
+      # Evidence crops are written locally and referenced by the sighting, so a
+      # thumbnail does not cross the WAN unless somebody opens it.
+      ANPR_CROP_DIR: /data/crops
+    volumes:
+      - anpr-models:/data/models
+      - anpr-crops:/data/crops
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Sized from the measured figure — ~50–57 cameras per 20 cores. Set
+          # ANPR_SHARDS so this node's share lands inside that.
+          cpus: "${EDGE_CPUS:-4}"
+
+volumes:
+  anpr-models:
+  anpr-crops:

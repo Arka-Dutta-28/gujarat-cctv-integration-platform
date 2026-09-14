@@ -1,0 +1,321 @@
+name: cctv
+
+x-python-build: &python-build
+  context: .
+  dockerfile: services/api/Dockerfile
+
+x-db-env: &db-env
+  POSTGRES_USER: ${POSTGRES_USER:-cctv}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  POSTGRES_DB: ${POSTGRES_DB:-cctv}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+
+services:
+
+  # --- storage -------------------------------------------------------
+  # Registry, geospatial and time-series in one database, which avoids a
+  # distributed-consistency problem at this scale. See README.md, Architecture.
+  db:
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      <<: *db-env
+      PGDATA: /home/postgres/pgdata/data
+    volumes:
+      - pgdata:/home/postgres/pgdata
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  # --- bus -----------------------------------------------------------
+  # Kafka wire protocol, single container, no ZooKeeper.
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 1G
+      - --overprovisioned
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # --- media ---------------------------------------------------------
+  # RTSP in, WebRTC/HLS out. Also how we fake 50 cameras from local files.
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    environment:
+      MTX_PROTOCOLS: tcp
+      # The address a browser reaches this media server on, advertised as the
+      # WebRTC ICE candidate. Correct for a local demo; a hosted instance must
+      # set it to its public address or no video will play.
+      MTX_WEBRTCADDITIONALHOSTS: ${WEBRTC_ADVERTISE_HOST:-127.0.0.1}
+    volumes:
+      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8554:8554"   # RTSP
+      - "8888:8888"   # HLS
+      - "8889:8889"   # WebRTC
+      - "8189:8189/udp"  # WebRTC ICE
+      - "9997:9997"   # control API
+    # No healthcheck: the bluenviron image is built FROM scratch, so it has no
+    # shell, no wget and no curl for a probe to use. Dependents wait on
+    # service_started and the M0 acceptance test verifies readiness through the
+    # MediaMTX control API instead, which is a truer check anyway.
+    restart: unless-stopped
+
+  # --- routing -------------------------------------------------------
+  # Behind a profile: OSRM needs a preprocessed road network, and M0 must come
+  # up without a few-hundred-MB download. Run `make osrm-prepare` first, then
+  # `docker compose --profile routing up -d osrm`. Needed from M4 onward.
+  #
+  # Geofabrik has no standalone Gujarat extract; Gujarat is inside India's
+  # Western Zone, which is what prepare.sh fetches. OSRM_BASE lets a deployment
+  # point at a different extract without editing this file.
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: ["routing"]
+    command: >
+      osrm-routed --algorithm mld
+      /data/${OSRM_BASE:-western-zone-latest}.osrm
+    volumes:
+      - ./data/osrm:/data
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  # --- schema --------------------------------------------------------
+  migrate:
+    build: *python-build
+    command: ["python", "-m", "services.migrate.migrate"]
+    env_file: [.env]
+    environment: *db-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # --- test harness --------------------------------------------------
+  # Places the 50 NH-48 cameras in the registry. Idempotent, so `make seed`
+  # re-runs it safely. Nothing else in the stack knows a camera exists until
+  # this has written it (invariant 4).
+  seed:
+    build: *python-build
+    command: ["python", "-m", "scripts.seed", "--cameras", "--corridor", "--watchlist"]
+    env_file: [.env]
+    environment:
+      <<: *db-env
+      SIM_VIDEO_DIR: /data/test-videos
+    volumes:
+      - ./data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # Publishes each registry camera's clip to its own RTSP path, on a loop,
+  # at that camera's playback offset. Reads the registry — it is not told
+  # which cameras exist.
+  simulator:
+    build:
+      context: .
+      dockerfile: services/simulator/Dockerfile
+    command: ["python", "-m", "services.simulator.simulate"]
+    env_file: [.env]
+    environment: *db-env
+    volumes:
+      - ./data:/data
+      # Derived data, not source: a named volume avoids host-uid juggling and
+      # is cleared by `docker compose down -v`.
+      - sim-cache:/data/sim-cache
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+    restart: unless-stopped
+
+  # Serves the generated clips over plain HTTP byte-range, which is exactly how
+  # the government evaluation feeds deliver video. Two jobs: it exercises the
+  # `http` adapter and the pull-on-demand relay without depending on an upstream
+  # we do not control, and it is the offline fallback demo path named as a known
+  # risk in docs/build-plan.md §7. Read-only, no credentials, dev data only.
+  mediasrc:
+    image: python:3.12-slim
+    working_dir: /data/test-videos
+    command: ["python", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "${MEDIASRC_HOST_PORT:-8086}:8080"
+    restart: unless-stopped
+
+  # Decides each camera's status and writes camera_health history. Until this
+  # runs, every camera reads `unknown` however many streams are live.
+  prober:
+    build: *python-build
+    command: ["python", "-m", "services.health.prober"]
+    env_file: [.env]
+    environment: *db-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+    restart: unless-stopped
+
+  # Pulls a camera into the media server while somebody is watching, and stops
+  # once nobody is. This is the "video on demand, not hauled continuously" part
+  # of the architecture. Uses the simulator image because it needs ffmpeg.
+  relay:
+    build:
+      context: .
+      dockerfile: services/simulator/Dockerfile
+    command:
+      - uvicorn
+      - services.relay.relay:app
+      - --host=0.0.0.0
+      - --port=8100
+    env_file: [.env]
+    environment: *db-env
+    ports:
+      - "${RELAY_HOST_PORT:-8100}:8100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+    restart: unless-stopped
+
+  # Reads the estate from the registry, decodes each camera and writes a
+  # sighting per tracked vehicle. Sharded: `--shards N` and one container per
+  # shard splits the estate with no scheduler and no shared state, which is the
+  # whole horizontal-scaling story.
+  #
+  # GPUs are requested but the worker runs without them — `ANPR_DEVICE=auto`
+  # falls back to CPU. That fallback is deliberate: the demo must survive a
+  # machine with no CUDA, and the performance page reports which one it measured.
+  anpr:
+    build:
+      context: .
+      # ANPR_DOCKERFILE=services/anpr/Dockerfile.gpu switches to the
+      # learned-model image. The lean one is the default because it builds from
+      # a distro mirror in seconds and runs anywhere.
+      dockerfile: ${ANPR_DOCKERFILE:-services/anpr/Dockerfile}
+    # No --shard: each replica derives its own from its container name, so
+    # `docker compose up -d --scale anpr=4` splits the estate across four
+    # processes with no orchestrator and no per-replica configuration. Set
+    # ANPR_SHARDS to match the replica count.
+    command: ["python", "-m", "services.anpr.worker"]
+    env_file: [.env]
+    environment:
+      <<: *db-env
+      ANPR_DEVICE: ${ANPR_DEVICE:-auto}
+      ANPR_SHARDS: ${ANPR_SHARDS:-1}
+      # Which cameras this worker may own — see services/anpr/worker.py
+      # CAMERA_REFS. Empty means all of them, which is the single-site default.
+      ANPR_CAMERA_REFS: ${ANPR_CAMERA_REFS:-}
+      ANPR_VEHICLE_BACKEND: ${ANPR_VEHICLE_BACKEND:-}
+      ANPR_OCR_BACKEND: ${ANPR_OCR_BACKEND:-}
+      ANPR_PLATE_BACKEND: ${ANPR_PLATE_BACKEND:-}
+      ANPR_OPENCV_THREADS: ${ANPR_OPENCV_THREADS:-1}
+      ANPR_OCR_CONCURRENCY: ${ANPR_OCR_CONCURRENCY:-2}
+      ANPR_VEHICLE_MODEL: ${ANPR_VEHICLE_MODEL:-yolo11n.pt}
+      # Both model hubs resolve their cache as `Path.home()/".cache"`, so HOME
+      # is what puts them on the shared volume below. Without it every replica
+      # downloads its own copy of the same weights — six pulls of 7.4 MB over a
+      # link that manages ~50 kB/s, with the estate stalled for all of it.
+      HOME: /data/models
+      ANPR_ORT_THREADS: ${ANPR_ORT_THREADS:-1}
+    volumes:
+      - anpr-models:/data/models
+      # Evidence crops. A named volume, shared read-only with the API that
+      # serves them: rows hold a relative path, so nothing in the database
+      # depends on where the images physically live.
+      - anpr-crops:/data/crops
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mediamtx:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # --- application ---------------------------------------------------
+  api:
+    build: *python-build
+    command:
+      - uvicorn
+      - services.api.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --proxy-headers
+    env_file: [.env]
+    environment: *db-env
+    volumes:
+      - ./data:/data
+      - anpr-crops:/data/crops:ro
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+  # Vite dev server: M0-M7 iterate on this. M8 swaps in the nginx production
+  # build for the hosted submission instance.
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    environment:
+      VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8000}
+      VITE_MEDIAMTX_BASE: ${VITE_MEDIAMTX_BASE:-http://localhost:8889}
+    volumes:
+      - ./web/src:/app/src:ro
+      - ./web/index.html:/app/index.html:ro
+      - ./web/public:/app/public:ro
+    ports:
+      - "${WEB_HOST_PORT:-5173}:5173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redpanda-data:
+  sim-cache:
+  anpr-models:
+  anpr-crops:

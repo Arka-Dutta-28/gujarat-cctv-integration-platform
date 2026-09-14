@@ -1,0 +1,1107 @@
+<meta charset="utf-8">
+<title>Vehicle Intelligence Grid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F4F6F7; --panel:#FFFFFF; --ink:#111A22; --ink-2:#48555F;
+  --ink-3:#6E7C86; --rule:#D6DDE1; --rule-2:#E7ECEE;
+  --accent:#E8B921; --accent-deep:#B08800;
+  --signal:#B23A2F; --good:#2C7A5B;
+  --shadow:0 1px 2px rgba(17,26,34,.06),0 12px 32px rgba(17,26,34,.07);
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Sans 3","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C1218; --panel:#141D25; --ink:#EAF0F3; --ink-2:#A5B3BC;
+    --ink-3:#7C8B95; --rule:#2A3742; --rule-2:#1E2932;
+    --accent:#F0C63B; --accent-deep:#F0C63B;
+    --signal:#E1766A; --good:#5CB58C;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C1218; --panel:#141D25; --ink:#EAF0F3; --ink-2:#A5B3BC;
+  --ink-3:#7C8B95; --rule:#2A3742; --rule-2:#1E2932;
+  --accent:#F0C63B; --accent-deep:#F0C63B;
+  --signal:#E1766A; --good:#5CB58C;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);
+  -webkit-font-smoothing:antialiased;margin:0}
+
+/* ---------- chrome ---------- */
+.bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;
+  padding:10px 20px;background:color-mix(in srgb,var(--ground) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--rule)}
+.mark{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2)}
+.mark b{color:var(--ink)}
+.bar .sp{flex:1}
+button{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:2px;
+  padding:7px 13px;cursor:pointer}
+button:hover{border-color:var(--ink-3)}
+button:focus-visible{outline:2px solid var(--accent-deep);outline-offset:2px}
+.hint{font-family:var(--mono);font-size:11px;color:var(--ink-3);letter-spacing:.04em}
+
+.deck{display:flex;flex-direction:column;gap:26px;padding:26px 20px 60px;
+  max-width:1180px;margin:0 auto}
+
+/* ---------- slide shell ---------- */
+.slide{container-type:inline-size;aspect-ratio:16/9;width:100%;position:relative;
+  background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  box-shadow:var(--shadow);overflow:hidden;display:flex}
+.rail{flex:0 0 5.6cqw;border-right:1px solid var(--rule-2);display:flex;
+  flex-direction:column;justify-content:space-between;align-items:center;
+  padding:2.6cqw 0;background:linear-gradient(var(--rule-2),transparent 40%)}
+.rail .el{font-family:var(--mono);font-size:1.02cqw;font-weight:600;letter-spacing:.2em;
+  writing-mode:vertical-rl;text-orientation:mixed;color:var(--ink-3);text-transform:uppercase}
+.rail .el b{color:var(--accent-deep)}
+.rail .no{font-family:var(--mono);font-size:1.2cqw;font-weight:600;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.body{flex:1;min-width:0;padding:3.1cqw 3.4cqw 2.6cqw;display:flex;flex-direction:column}
+
+h2{font-family:var(--display);font-weight:700;font-size:3.1cqw;line-height:1.1;
+  letter-spacing:-.015em;margin:0;text-wrap:balance}
+.kicker{font-family:var(--mono);font-size:1.08cqw;font-weight:600;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 .9cqw}
+.kicker.acc{color:var(--accent-deep)}
+.lede{font-size:1.62cqw;line-height:1.42;color:var(--ink-2);margin:1.3cqw 0 0;max-width:62ch}
+.lede strong{color:var(--ink);font-weight:600}
+p{font-size:1.42cqw;line-height:1.45;margin:.9cqw 0 0;color:var(--ink-2)}
+p strong{color:var(--ink);font-weight:600}
+.cols{display:grid;gap:2.2cqw;margin-top:1.9cqw;flex:1;min-height:0}
+.c2{grid-template-columns:1fr 1fr}
+.c2u{grid-template-columns:1.25fr 1fr}
+.c3{grid-template-columns:repeat(3,1fr)}
+.grow{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* ---------- rules + tables ---------- */
+.hr{height:1px;background:var(--rule);margin:1.6cqw 0 0}
+.hr.acc{height:2px;background:var(--accent);width:5.2cqw;margin:1.1cqw 0 0}
+table{width:100%;border-collapse:collapse;margin-top:1.4cqw;font-size:1.24cqw}
+th{font-family:var(--mono);font-size:.98cqw;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);text-align:left;padding:0 .8cqw .7cqw 0;
+  border-bottom:1px solid var(--rule);vertical-align:bottom}
+td{padding:.72cqw .8cqw .72cqw 0;border-bottom:1px solid var(--rule-2);
+  vertical-align:top;color:var(--ink-2);line-height:1.34}
+td strong{color:var(--ink);font-weight:600}
+tr:last-child td{border-bottom:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;
+  color:var(--ink);white-space:nowrap}
+.num.good{color:var(--good)}
+.num.bad{color:var(--signal)}
+td.r,th.r{text-align:right;padding-right:0}
+
+/* ---------- devices ---------- */
+.plate{display:inline-flex;align-items:center;gap:.5cqw;background:var(--accent);
+  color:#111A22;font-family:var(--mono);font-weight:600;letter-spacing:.06em;
+  padding:.42cqw .85cqw;border-radius:2px;border:1.5px solid #111A22;
+  font-size:1.5cqw;font-variant-numeric:tabular-nums}
+.stat{display:flex;flex-direction:column;gap:.35cqw}
+.stat .v{font-family:var(--mono);font-weight:600;font-size:2.7cqw;line-height:1;
+  color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .v.good{color:var(--good)}
+.stat .k{font-family:var(--mono);font-size:.98cqw;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1.6cqw;margin-top:1.7cqw;
+  padding-top:1.5cqw;border-top:1px solid var(--rule)}
+.card{background:var(--ground);border:1px solid var(--rule-2);border-radius:2px;
+  padding:1.5cqw 1.6cqw;display:flex;flex-direction:column;gap:.55cqw}
+.card h3{font-family:var(--display);font-size:1.5cqw;font-weight:600;margin:0;
+  line-height:1.2;letter-spacing:-.01em}
+.card p{font-size:1.2cqw;margin:0;line-height:1.4}
+.card .tag{font-family:var(--mono);font-size:.94cqw;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+.quote{border-left:3px solid var(--accent);padding:.2cqw 0 .2cqw 1.4cqw;margin-top:1.5cqw}
+.quote p{margin:0;font-size:1.5cqw;color:var(--ink);line-height:1.38}
+.note{margin-top:auto;padding-top:1.3cqw;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:1.02cqw;line-height:1.5;color:var(--ink-3);
+  letter-spacing:.01em}
+.note b{color:var(--ink-2);font-weight:600}
+pre{font-family:var(--mono);font-size:1.06cqw;line-height:1.44;color:var(--ink-2);
+  background:var(--ground);border:1px solid var(--rule-2);border-radius:2px;
+  padding:1.3cqw 1.5cqw;margin:1.3cqw 0 0;overflow:auto;white-space:pre}
+pre b{color:var(--ink);font-weight:600}
+code{font-family:var(--mono);font-size:.9em;background:var(--rule-2);color:var(--ink);
+  padding:.1em .38em;border-radius:2px;white-space:nowrap}
+.slide.dark code{background:rgba(234,240,243,.12);color:#fff}
+em{font-style:italic}
+pre .y{color:var(--accent-deep);font-weight:600}
+ul{margin:1.1cqw 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.8cqw}
+li{font-size:1.32cqw;line-height:1.4;color:var(--ink-2);padding-left:1.5cqw;position:relative}
+li::before{content:"";position:absolute;left:0;top:.62em;width:.62cqw;height:.62cqw;
+  background:var(--accent);border-radius:1px}
+li strong{color:var(--ink);font-weight:600}
+li.warn::before{background:var(--signal)}
+
+/* ---------- dark section slides ---------- */
+.slide.dark{background:#111A22;border-color:#111A22;color:#EAF0F3}
+.slide.dark .rail{border-right-color:rgba(234,240,243,.12);
+  background:linear-gradient(rgba(234,240,243,.06),transparent 40%)}
+.slide.dark .rail .el,.slide.dark .rail .no{color:rgba(234,240,243,.5)}
+.slide.dark .rail .el b{color:var(--accent)}
+/* `p strong` is in this list because it was not, and the omission was invisible
+   on screen: emphasis inside a dark slide fell back to `--ink`, which the screen
+   theme happens to make light. The print stylesheet redefines `--ink` to near
+   black for paper, so the exported PDF rendered slide 2's emphasised clauses as
+   black on near-black, the text was simply absent from the deliverable. Naming
+   the colour here instead of inheriting a token means the two media cannot
+   disagree again. */
+.slide.dark h2,.slide.dark .stat .v,.slide.dark td strong,.slide.dark li strong,
+.slide.dark p strong,.slide.dark p b,.slide.dark .quote p{color:#FFFFFF}
+.slide.dark .lede,.slide.dark p,.slide.dark td,.slide.dark li{color:rgba(234,240,243,.72)}
+.slide.dark .kicker,.slide.dark .stat .k,.slide.dark th,.slide.dark .note{color:rgba(234,240,243,.5)}
+.slide.dark .hr,.slide.dark th,.slide.dark .stats,.slide.dark .note{border-color:rgba(234,240,243,.16)}
+.slide.dark td{border-bottom-color:rgba(234,240,243,.09)}
+.slide.dark .num{color:#FFFFFF}
+.slide.dark .num.good{color:#6ED3A4}
+.slide.dark .num.bad{color:#F09385}
+.title-wrap{flex:1;display:flex;flex-direction:column;justify-content:center}
+.title-wrap h1{font-family:var(--display);font-weight:700;font-size:4.6cqw;line-height:1.04;
+  letter-spacing:-.025em;margin:0;color:var(--ink);max-width:20ch;text-wrap:balance}
+.title-wrap .sub{font-size:1.72cqw;color:var(--ink-2);margin:1.5cqw 0 0;max-width:52ch;
+  line-height:1.4}
+.title-wrap .meta{font-family:var(--mono);font-size:1.08cqw;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent-deep);margin:0 0 1.9cqw}
+
+/* ---------- present mode ---------- */
+body.present .deck{max-width:none;padding:0;gap:0}
+body.present .slide{display:none;border-radius:0;border:none;box-shadow:none;
+  width:min(100vw,calc((100vh - 46px)*16/9));margin:0 auto}
+body.present .slide.on{display:flex}
+body.present{overflow:hidden}
+
+/* ---------- print ---------- */
+/* 280 x 157.5 mm is exactly 16:9, so a slide fills the page with no letterbox
+   and nothing reflows between screen and paper. `size:landscape` alone left the
+   ratio to the printer, which letterboxes a 16:9 slide onto A4 or Letter and
+   wastes about a fifth of the page. Stating both dimensions makes the exported
+   PDF identical wherever it is produced. */
+@page{size:280mm 157.5mm;margin:0}
+@media print{
+  :root{--ground:#fff;--panel:#fff;--ink:#111A22;--ink-2:#3D4A54;--ink-3:#6E7C86;
+    --rule:#CBD3D8;--rule-2:#E4E9EC;--shadow:none}
+  html,body{width:280mm;margin:0}
+  .bar{display:none}
+  .deck{max-width:none;padding:0;gap:0;display:block}
+  /* Explicit height rather than aspect-ratio: the page box is already 16:9, so
+     the slide can just fill it, and a height that does not depend on how the
+     printer resolved the width is one less thing to differ between machines. */
+  .slide{break-after:page;page-break-after:always;break-inside:avoid;
+    page-break-inside:avoid;border:none;border-radius:0;box-shadow:none;
+    width:280mm;height:157.5mm;aspect-ratio:auto;margin:0;overflow:hidden}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- figures ---------- */
+.fig{margin:1.2cqw 0 0;display:flex;flex-direction:column;gap:.55cqw;min-height:0}
+.fig img{display:block;width:100%;height:auto;border:1px solid var(--rule);
+  border-radius:2px;background:var(--ground)}
+.fig.fit{flex:1;min-height:0}
+.fig.fit img{height:100%;width:100%;object-fit:contain;border:0;background:transparent}
+.fig figcaption{font-family:var(--mono);font-size:.98cqw;line-height:1.45;
+  color:var(--ink-3);letter-spacing:.01em}
+.fig figcaption b{color:var(--ink-2);font-weight:600}
+.slide.dark .fig img{border-color:rgba(234,240,243,.16)}
+.slide.dark .fig figcaption{color:rgba(234,240,243,.5)}
+.slide.dark .fig figcaption b{color:rgba(234,240,243,.72)}
+/* crop a wide screenshot to the region that reads at slide size */
+.shot{overflow:hidden;border:1px solid var(--rule);border-radius:2px;background:var(--ground)}
+.shot img{display:block;width:100%;height:auto}
+.slide.dark .shot{border-color:rgba(234,240,243,.16)}
+/* criteria table: tighter, seven rows must fit */
+table.crit td,table.crit th{padding:.52cqw .7cqw;font-size:1.12cqw;vertical-align:top}
+table.crit td:first-child{width:2.2cqw;color:var(--accent-deep);font-family:var(--mono);
+  font-weight:600}
+.slide.dark table.crit td:first-child{color:var(--accent)}
+</style>
+
+<div class="bar">
+  <span class="mark"><b>Vehicle Intelligence Grid</b> &nbsp;/&nbsp; Gujarat Police Hackathon 2026</span>
+  <span class="sp"></span>
+  <span class="hint" id="hint">18 slides &middot; scroll to review</span>
+  <button id="present">Present</button>
+  <button onclick="window.print()">Print / PDF</button>
+</div>
+
+<div class="deck" id="deck">
+
+<!-- 1 ─────────────────────────────────── TITLE -->
+<section class="slide dark">
+  <div class="rail"><span class="el">Title</span><span class="no">01</span></div>
+  <div class="body title-wrap">
+    <p class="meta">Gujarat Police Hackathon 2026</p>
+    <h1>Statewide CCTV Integration &amp; Vehicle Intelligence</h1>
+    <p class="sub">An edge-first federated architecture: Model&nbsp;1 registry as control
+      plane, Model&nbsp;2 feed access, Model&nbsp;3 adapter spine.</p>
+    <div class="stats">
+      <div class="stat"><span class="v">80</span><span class="k">cameras onboarded</span></div>
+      <div class="stat"><span class="v">26 ms</span><span class="k">vehicle trace</span></div>
+      <div class="stat"><span class="v">1.04 s</span><span class="k">detection → alert</span></div>
+      <div class="stat"><span class="v">869</span><span class="k">automated tests</span></div>
+    </div>
+    <p class="note"><b>Working platform.</b> Every figure in this deck is measured on the
+      running system, or arithmetic from a measured figure with the calculation shown.</p>
+  </div>
+</section>
+
+<!-- 2 ─────────────────────────────────── THE CONSTRAINT -->
+<section class="slide dark">
+  <div class="rail"><span class="el">Framing</span><span class="no">02</span></div>
+  <div class="body">
+    <p class="kicker">The constraint that shapes everything</p>
+    <h2 style="font-size:2.7cqw;max-width:24ch">“Participants will be provided with a designated
+      vehicle registration number.”</h2>
+    <div class="cols c2u" style="align-items:start">
+      <div>
+        <p class="lede">By the time that number is handed over, <strong>the vehicle has already
+          driven past the cameras.</strong> There is no opportunity to go and look for it.</p>
+        <p class="lede">The only thing that can answer is an index of <strong>every plate
+          already read</strong>.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Consequence</span>
+        <h3>We persist every read, not just watchlist hits</h3>
+        <p>This moves the system's cost from the query path
+          to the write path. Every sizing decision in this deck follows from it.</p>
+        <div style="margin-top:.6cqw"><span class="plate">GJ 01 AB 1234</span></div>
+      </div>
+    </div>
+    <p class="note"><b>The distinction that matters:</b> a watchlist alerter answers questions
+      asked in advance. An index answers a question nobody had asked yet, which is exactly what
+      the evaluation is.</p>
+  </div>
+</section>
+
+<!-- 3 ─────────────────────────────────── E1 MODEL -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>1</b> of 8</span><span class="no">03</span></div>
+  <div class="body">
+    <p class="kicker">Proposed model, with justification</p>
+    <h2>Hybrid: a registry control plane, direct feed access, an adapter spine</h2>
+    <div class="hr acc"></div>
+    <p class="lede">We adopt <strong>Model 4's analytics outcomes</strong> through distributed
+      edge inference rather than centralised video ingest.</p>
+    <table>
+      <tr><th style="width:20%">Model</th><th style="width:45%">Role in the hybrid</th><th>Demonstrated by</th></tr>
+      <tr><td><strong>M1: Registry &amp; GIS</strong><br><span style="font-size:.92em">mandatory</span></td>
+        <td><strong>The control plane, not a side deliverable.</strong> Adapter choice, RBAC scope,
+          health, coverage and route plausibility all resolve through it</td>
+        <td>80 cameras onboarded (50 simulated, 30 government); GIS map; corridor gap analysis</td></tr>
+      <tr><td><strong>M2: Unified viewing</strong></td>
+        <td>The feed-access and operator layer. Direct RTSP/ONVIF is genuinely right for cameras
+          with no VMS in front of them, which is most of them</td>
+        <td>Live view, searchable sightings, alert console</td></tr>
+      <tr><td><strong>M3: Federation</strong></td>
+        <td>The spine that makes M2 survive scale. A new vendor is a plugin, not a redesign</td>
+        <td>One interface; adding a source type changes no other file</td></tr>
+      <tr><td><strong>M4: Analytics outcomes</strong></td>
+        <td>Its <strong>goals</strong> adopted in full. Its <strong>centralised ingest</strong>
+          rejected on cost and on the Core Goal</td>
+        <td>Journey reconstruction, watchlist correlation, real-time alerts</td></tr>
+    </table>
+    <p class="note"><b>The organising idea:</b> move the analytics to the edge, move only
+      metadata to the centre, move video only on demand.</p>
+  </div>
+</section>
+
+<!-- 4 ─────────────────────────────────── E1 REJECT M4 -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>1</b> of 8</span><span class="no">04</span></div>
+  <div class="body">
+    <p class="kicker">Proposed model, with justification</p>
+    <h2>Why we rejected Model 4, and the arithmetic at 80,000 cameras</h2>
+    <div class="cols c2u">
+      <div class="grow">
+        <table>
+          <tr><th></th><th class="r">Central VMS</th><th class="r">This platform</th></tr>
+          <tr><td><strong>Sustained backhaul</strong></td>
+            <td class="r"><span class="num bad">240 Gbit/s</span></td>
+            <td class="r"><span class="num good">~40 Mbit/s</span></td></tr>
+          <tr><td><strong>Central storage, 15 days</strong></td>
+            <td class="r"><span class="num bad">~26 PB</span></td>
+            <td class="r"><span class="num good">~5 GB/day</span></td></tr>
+          <tr><td><strong>Existing VMS, storage, AMC</strong></td>
+            <td class="r">Replaced</td>
+            <td class="r"><span class="num good">Preserved</span></td></tr>
+          <tr><td><strong>On WAN outage</strong></td>
+            <td class="r">Blind</td>
+            <td class="r">Edge keeps detecting</td></tr>
+        </table>
+        <p class="note" style="margin-top:1.4cqw"><b>0.5 kbit/s per camera</b> is measured, not
+          assumed, 104 sightings/minute across 71 contributing cameras, at ~300 bytes a row.</p>
+      </div>
+      <div class="grow" style="gap:1.2cqw;display:flex;flex-direction:column">
+        <div class="card">
+          <span class="tag">Reason one</span>
+          <h3>It contradicts the Core Goal</h3>
+          <p>The brief asks for an approach that is <em>cost-effective</em> and <em>uses existing
+            infrastructure to the maximum practical extent</em>. Model 4 discards 26 departments'
+            investments and rebuilds them centrally.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Reason two</span>
+          <h3>It contradicts the bonus criteria</h3>
+          <p>Which explicitly reward <em>strong edge-processing, bandwidth-optimisation, or
+            low-connectivity operation</em>. Central ingest is the opposite of all three.</p>
+        </div>
+      </div>
+    </div>
+    <p class="note"><b>We decline one implementation choice, not a capability.</b> Every
+      functional outcome Model 4 lists is present. The transport is what differs.</p>
+  </div>
+</section>
+
+<!-- 5 ─────────────────────────────────── E2 OVERVIEW -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>2</b> of 8</span><span class="no">05</span></div>
+  <div class="body">
+    <p class="kicker">Solution overview and objectives</p>
+    <h2>Three capabilities, graded separately, all built</h2>
+    <div class="hr acc"></div>
+    <table>
+      <tr><th style="width:14%">Objective</th><th style="width:48%">What it means</th><th>State</th></tr>
+      <tr><td><strong>Onboard</strong></td>
+        <td>Any camera, any brand, any protocol, without redesign</td>
+        <td>80 cameras. <span class="num good">5.1 s</span> each, against a 30 s budget</td></tr>
+      <tr><td><strong>Read</strong></td>
+        <td>Continuously read plates from every camera and store <strong>all</strong> of them</td>
+        <td><span class="num good">82.4%</span> exact on ANPR-grade cameras &middot;
+          <span class="num">104</span> sightings/min</td></tr>
+      <tr><td><strong>Trace &amp; alert</strong></td>
+        <td>A plate returns a route across the state; a wanted vehicle raises an alert in real time</td>
+        <td><span class="num good">26 ms</span> trace &middot;
+          <span class="num good">1.04 s</span> detection→alert</td></tr>
+    </table>
+    <div class="hr"></div>
+    <p class="kicker" style="margin-top:1.5cqw">Also built, and also graded</p>
+    <div class="cols c3" style="margin-top:.4cqw">
+      <div class="card"><h3>Evidence export</h3><p>CSV and PDF carrying plate, confidence,
+        camera, geolocation, timestamp <strong>and the crop that proves the read</strong>.</p></div>
+      <div class="card"><h3>Coverage &amp; gap analysis</h3><p>Which road segments no camera
+        watches, the input to where the next cameras go.</p></div>
+      <div class="card"><h3>Audit &amp; access control</h3><p>Role- and department-scoped access,
+        with an immutable record of every search and export.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ─────────────────────────────────── E2 INNOVATIONS -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>2</b> of 8</span><span class="no">06</span></div>
+  <div class="body">
+    <p class="kicker">Key innovations</p>
+    <h2>Five, each backed by a measurement rather than a claim</h2>
+    <table>
+      <tr><th style="width:4%"></th><th style="width:40%">Innovation</th><th>The measurement behind it</th></tr>
+      <tr><td class="num">1</td><td><strong>Edge-first metadata architecture</strong>, analytics
+        beside the camera, ~250-byte events northbound</td>
+        <td><span class="num">0.5 kbit/s</span> per camera against ~3 Mbit/s of video,
+      <strong>four orders of magnitude</strong></td></tr>
+      <tr><td class="num">2</td><td><strong>Registry as control plane</strong>, not inventory,
+      adapters, RBAC, health, geography and route plausibility all resolve through it</td>
+        <td>The organisers' grid changed hostname mid-build. It cost
+          <strong>one environment variable</strong></td></tr>
+      <tr><td class="num">3</td><td><strong>Per-track confidence voting + derived confusable-character
+        normalisation</strong>, the confusion table is generated, never typed in</td>
+        <td>Coercion is <strong>positional</strong>; a hand-written table cannot distinguish a
+          considered omission from an oversight</td></tr>
+      <tr><td class="num">4</td><td><strong>Travel-time plausibility scoring</strong>, an
+        impossible hop splits the journey instead of being dropped</td>
+        <td><strong>Cloned-plate detection as a by-product</strong> of route reconstruction</td></tr>
+      <tr><td class="num">5</td><td><strong>Self-calibrating tamper detection</strong>, each camera
+        judged against its own normal, not a global threshold</td>
+        <td>False positives <span class="num bad">39</span> →
+          <span class="num good">0</span></td></tr>
+    </table>
+    <p class="note"><b>Innovations 3 and 4 share a principle: the anomaly is the signal.</b>
+      A system that quietly discards the outlier discards the crime.</p>
+  </div>
+</section>
+
+<!-- 7 ─────────────────────────────────── E3 ARCHITECTURE -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>3</b> of 8</span><span class="no">07</span></div>
+  <div class="body">
+    <p class="kicker">High-level architecture</p>
+    <h2>Six layers, and one of them is mandatory by design</h2>
+    <div class="cols c2u" style="margin-top:1.5cqw">
+      <pre>┌────────────────────────────────────────────────┐
+│ <b>L5  PRESENTATION</b>  GIS console · Alert desk ·  │
+│                    Journey explorer · Registry  │
+├────────────────────────────────────────────────┤
+│ <b>L4  INTELLIGENCE</b>  Watchlist matcher ·         │
+│                    Journey · Re-ID · Reports    │
+├────────────────────────────────────────────────┤
+│ <b>L3  PLATFORM CORE</b> Event store ·               │
+│           <span class="y">★ CAMERA REGISTRY &amp; GIS</span> ·           │
+│                    RBAC · Audit · Stream broker │
+├────────────────────────────────────────────────┤
+│ <b>L2  FEDERATION</b>    Adapter framework ·         │
+│                    Credentials · Health prober  │
+├────────────────────────────────────────────────┤
+│ <b>L1  EDGE ANALYTICS</b> Decode · Sample · Detect · │
+│                    Track · OCR · Vote · Tamper  │
+├────────────────────────────────────────────────┤
+│ <b>L0  SOURCES</b>       IP cams · Encoders ·        │
+│                    NVRs · Departmental VMS      │
+└────────────────────────────────────────────────┘
+  <span class="y">★</span> mandatory Model 1, as the control plane</pre>
+      <div class="grow" style="display:flex;flex-direction:column;gap:1.2cqw">
+        <div class="card">
+          <span class="tag">What crosses the district → state link</span>
+          <h3>Metadata always. Video only on demand.</h3>
+          <p>A relay starts when an operator opens a camera and is reaped 45 seconds after the
+            last viewer. That cost is <strong>per viewer, not per camera</strong>, an unwatched
+            camera costs nothing beyond its metadata.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Deployment tiers</span>
+          <h3>Edge → district → state</h3>
+          <p>One container image, identical in all three placements. Scaling is a replica count,
+            not a redeployment.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ─────────────────────────────────── E3 WORKFLOW -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>3</b> of 8</span><span class="no">08</span></div>
+  <div class="body">
+    <p class="kicker">End-to-end workflow</p>
+    <h2>A vehicle passes a camera in Rajkot</h2>
+    <div class="cols c2u" style="margin-top:1.2cqw">
+      <pre><span class="y">①</span> registry already knows the camera,
+   its position, and its adapter
+
+<span class="y">②</span> stream opened - timing from the video's
+   own <b>PTS</b>, never from arrival
+
+<span class="y">③</span> vehicle detected and tracked; plate
+   located <b>inside the vehicle box</b>
+
+<span class="y">④</span> OCR on each sampled crop
+   → per-track vote → <b>ONE plate string</b>
+
+<span class="y">⑤</span> sighting written - <b>always</b>, every
+   vehicle, ~300 bytes
+   └─ in the <b>same transaction</b>: matched
+      against the watchlist, alert written
+      if it hits. Both rows commit, or neither
+
+<span class="y">⑥</span> operator sees the alert with its
+   evidence bundle              <b>1.04 s</b>
+
+<span class="y">⑦</span> later - a plate is typed, and its route
+   across the state returns       <b>26 ms</b></pre>
+      <div class="grow" style="display:flex;flex-direction:column;gap:1.1cqw">
+        <div class="quote" style="margin-top:0">
+          <p><strong>Steps ⑤ and ⑦ are the product.</strong> ⑤ is what makes ⑦ possible on
+            evaluation day.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Not obvious, and load-bearing</span>
+          <h3>Plate search is confined to a vehicle</h3>
+          <p>Every government feed burns a timestamp band and site label onto its own picture, at
+            plate size and contrast. Whole-frame recognition reads the camera's own clock as a
+            registration number, on every camera, forever.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Not obvious, and load-bearing</span>
+          <h3>Timing comes from the video</h3>
+          <p>A gateway replays its buffer on connect, so frames arrive faster than real time.
+            Timed by arrival, <strong>every reconnect computes an impossible speed and reports a
+            cloned plate.</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>3</b> of 8</span><span class="no">09</span></div>
+  <div class="body">
+    <p class="kicker">End-to-end workflow, as built</p>
+    <h2 style="font-size:2.1cqw">Three stages: integration, edge analytics, and two paths that
+      never share code</h2>
+    <figure class="fig fit">
+      <img src="../dist/gujarat-cctv-workflow.png"
+           alt="Camera to alert and trace: integration, edge analytics, and the alert and trace paths">
+    </figure>
+    <p class="note"><b>Read the bottom band first.</b> Live alerting runs on every write; the
+      retrospective trace runs on an operator's query. They read the same
+      <code>sightings</code> table and share no implementation, because the evaluation grades both
+      and building one does not deliver the other.</p>
+  </div>
+</section>
+
+<!-- 9 ─────────────────────────────────── E4 ANALYTICS -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>4</b> of 8</span><span class="no">10</span></div>
+  <div class="body">
+    <p class="kicker">AI analytics approach</p>
+    <h2>Detection, recognition, and event analytics</h2>
+    <pre style="margin-top:1.2cqw">decode → <b>sample</b> → detect + track → <b>locate plate</b> → OCR → reject overlay text → <b>per-track vote</b> → normalise → persist</pre>
+    <table>
+      <tr><th style="width:17%">Stage</th><th style="width:36%">Approach</th><th>Why it is that way</th></tr>
+      <tr><td><strong>Sampling</strong></td><td>Analysis rate follows scene activity</td>
+        <td>80,000 × 15 fps = 1.2 M detections/s does not close.
+          <span class="num good">81.3%</span> of analysis avoided</td></tr>
+      <tr><td><strong>Detect &amp; track</strong></td><td>Multi-object tracking, stable id per vehicle</td>
+        <td>Voting needs a track, not a frame</td></tr>
+      <tr><td><strong>Plate localisation</strong></td><td>Inside the vehicle box only</td>
+        <td>Removes the burnt-in-overlay error class entirely</td></tr>
+      <tr><td><strong>Recognition</strong></td><td>docTR on the CPU; <strong>PaddleOCR-VL on GPU</strong> for cameras an operator boosts</td>
+        <td>Night plates found 35% → 62% → 100% on the test clips</td></tr>
+      <tr><td><strong>Voting</strong></td><td>Whole-string <em>and</em> per-character, confidence-weighted</td>
+        <td>Per-frame emission duplicates records <em>and</em> discards many independent opinions</td></tr>
+      <tr><td><strong>Normalisation</strong></td><td><strong>Positional</strong>, coerced by plate slot,
+        at write <em>and</em> query time</td>
+        <td>A global <span class="num">O→0</span> merges different vehicles onto one key</td></tr>
+      <tr><td><strong>Persistence</strong></td><td>Unconditional, including format failures</td>
+        <td>A mis-read wanted vehicle is worse than a noisy record</td></tr>
+    </table>
+    <p class="note"><b>Beyond ANPR:</b> vehicle class and appearance attributes &middot;
+      <b>a vehicle id on every sighting</b>, joined by plate or by a learned appearance vector
+      (DINOv2-small), so an unreadable vehicle can still be followed &middot; self-calibrating tamper
+      detection &middot; per-camera health analytics &middot; <b>on-demand OCR boost</b> for the
+      cameras around a location.</p>
+  </div>
+</section>
+
+<!-- 10 ─────────────────────────────────── E4 MEASUREMENTS -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>4</b> of 8</span><span class="no">11</span></div>
+  <div class="body">
+    <p class="kicker">AI analytics: what the measurements said</p>
+    <h2>Accuracy is reported per condition, because one headline would average three problems</h2>
+    <div class="cols c2">
+      <div class="grow">
+        <table>
+          <tr><th>Condition</th><th class="r">Exact</th><th class="r">Within 2 chars</th></tr>
+          <tr><td><strong>Daylight</strong></td><td class="r"><span class="num good">86.6%</span></td><td class="r">98.1%</td></tr>
+          <tr><td><strong>Glare</strong></td><td class="r"><span class="num">57.1%</span></td><td class="r">92.9%</td></tr>
+          <tr><td><strong>Night</strong></td><td class="r"><span class="num bad">58.6%</span></td><td class="r">75.9%</td></tr>
+          <tr><td><strong>Overall, ANPR-grade</strong></td><td class="r"><span class="num good">82.4%</span></td><td class="r"><span class="num">95.1%</span></td></tr>
+        </table>
+        <p class="note" style="margin-top:1.4cqw"><b>Night is the weak spot</b>, and it is on the
+          slide rather than in a footnote. Measured with Tesseract; docTR, the default reader since
+          14 Sep, finds 62% of night plates against Tesseract's 35% on the same clips.</p>
+      </div>
+      <div class="grow">
+        <p class="kicker" style="margin-top:.4cqw">The finding that surprised us</p>
+        <h2 style="font-size:1.9cqw">Heavier was not better</h2>
+        <table>
+          <tr><td><strong>Tesseract</strong> on Indian plates</td>
+            <td class="r"><span class="num good">83% exact</span></td></tr>
+          <tr><td>A general hub OCR model, <strong>same crops</strong></td>
+            <td class="r"><span class="num bad">1.1% exact</span></td></tr>
+          <tr><td>Single-image <strong>GPU</strong> inference</td>
+            <td class="r"><span class="num">24.4 ms</span></td></tr>
+          <tr><td>The <strong>CPU</strong> path it was meant to beat</td>
+            <td class="r"><span class="num good">17.0 ms</span></td></tr>
+          <tr><td><strong>docTR</strong> on the CPU, night plates found</td>
+            <td class="r"><span class="num good">62%</span> vs 35%</td></tr>
+        </table>
+        <div class="quote">
+          <p><strong>Light models by default, heavy models as a measured per-camera fallback.</strong>
+            A camera the light path demonstrably cannot read escalates on its own evidence, one
+            rung at a time, budgeted, and rolled back if it does not help.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>4</b> of 8</span><span class="no">12</span></div>
+  <div class="body">
+    <p class="kicker">The reader ladder, measured</p>
+    <h2>Night is where readers separate, and it is the condition that matters</h2>
+    <figure class="chart" data-unit="% of plates found">
+      <table>
+        <tr><th>Reader</th><th class="r">Night</th><th class="r">Day</th></tr>
+        <tr><td>Tesseract</td><td class="r">34.7</td><td class="r">84.1</td></tr>
+        <tr><td>docTR PARSeq</td><td class="r">62.4</td><td class="r">95.7</td></tr>
+        <tr><td>PaddleOCR-VL</td><td class="r">100.0</td><td class="r">100.0</td></tr>
+      </table>
+      <figcaption><b>Plates found on the 12 generated traffic clips</b>, 101 night and 69 day.
+        Measured 14 Sep 2026. docTR is the default because it fits a CPU edge box at 37 ms per
+        crop; PaddleOCR-VL needs a GPU and runs only on cameras an operator boosts.</figcaption>
+    </figure>
+    <p class="note"><b>Day hides the difference.</b> Every reader is respectable in daylight, so a
+      daylight-only benchmark would have justified the cheapest one and left the estate blind at
+      night, which is when the vehicles we are asked about actually move.</p>
+  </div>
+</section>
+
+<!-- 11 ─────────────────────────────────── E5 WATCHLIST -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>5</b> of 8</span><span class="no">13</span></div>
+  <div class="body">
+    <p class="kicker">Watchlist correlation methodology</p>
+    <h2>A match is not a boolean</h2>
+    <div class="hr acc"></div>
+    <p class="lede">Matching happens <strong>on the write path</strong>, not in a downstream
+      consumer. The watchlist is held in process and refreshed on a 2-second timer, at 104
+      sightings a minute, a per-sighting query puts a network round trip on the pipeline's hot path.</p>
+    <table>
+      <tr><th style="width:14%">Tier</th><th style="width:36%">Condition</th><th>What it means to an operator</th></tr>
+      <tr><td><span class="num good">confirmed</span></td>
+        <td>Exact key <strong>and</strong> confidence ≥ 0.85</td><td>Act on it</td></tr>
+      <tr><td><span class="num">probable</span></td>
+        <td>Exact key at lower confidence, <strong>or</strong> edit distance 1</td>
+        <td>Verify against the evidence crop first</td></tr>
+      <tr><td><span class="num">possible</span></td>
+        <td>Edit distance 2</td><td>A lead, corroborate before acting</td></tr>
+    </table>
+    <div class="cols c3" style="margin-top:1.5cqw">
+      <div class="card"><span class="tag">Why not exact-only</span>
+        <p>It misses the wanted vehicle whose plate came back one character wrong,
+      <strong>12.7% of reads</strong>. A system that misses one in eight is not working.</p></div>
+      <div class="card"><span class="tag">Why not anything-close</span>
+        <p>The operator is flooded and stops reading alerts, which is <strong>worse than not
+          alerting at all</strong>.</p></div>
+      <div class="card"><span class="tag">Why confidence splits an exact match</span>
+        <p>The same string at 0.4 and at 0.95 is different evidence. The tier is how the operator
+          is told <strong>which one they are looking at</strong>.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 ─────────────────────────────────── E5 ALERTING -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>5</b> of 8</span><span class="no">14</span></div>
+  <div class="body">
+    <p class="kicker">Real-time alerting</p>
+    <h2>Detection to an operator's screen in 1.04 seconds</h2>
+    <div class="cols c2u" style="margin-top:1.2cqw">
+      <pre>sighting
+  │
+  ├─ tier      confirmed │ probable │ possible
+  │
+  ├─ priority  severity − tier demotion
+  │
+  ├─ dedup     same plate, same camera, <b>120 s</b>
+  │            ×3 for `possible` - a low-tier repeat
+  │            is far more likely a re-read than a
+  │            second event worth waking someone for
+  │
+  ├─ <b>alert row - SAME TRANSACTION as the sighting</b>
+  │
+  ├─ evidence  crop · plate read · confidence ·
+  │            matched record · case ref · camera ·
+  │            district · lat/lon · measured latency
+  │
+  └─ states    new → acknowledged → actioned
+                    └────────────→ dismissed</pre>
+      <div class="grow" style="display:flex;flex-direction:column;gap:1.1cqw">
+        <div class="stats" style="grid-template-columns:1fr 1fr;border-top:none;padding-top:0;margin-top:.2cqw">
+          <div class="stat"><span class="v good">1.04 s</span><span class="k">measured</span></div>
+          <div class="stat"><span class="v" style="color:var(--ink-3)">5 s</span><span class="k">budget</span></div>
+        </div>
+        <div class="card"><span class="tag">Consequence one</span>
+          <h3>Both rows commit, or neither does</h3>
+          <p>The time-series store cannot enforce that foreign key, so the transaction enforces it
+            structurally: <strong>an alert can never point at a sighting that does not exist.</strong></p></div>
+        <div class="card"><span class="tag">Consequence two</span>
+          <h3>There is no delete</h3>
+          <p><code>dismissed</code> and <code>false_positive</code> are statuses. An alert an
+            operator judged wrong is itself evidence, of the error rate, and of the decision
+            taken.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 ─────────────────────────────────── E6 TECH -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>6</b> of 8</span><span class="no">15</span></div>
+  <div class="body">
+    <p class="kicker">Key technologies, frameworks and tools</p>
+    <h2>Every choice has a reason, and the deviations are named</h2>
+    <table>
+      <tr><th style="width:15%">Layer</th><th style="width:24%">Choice</th><th>Why this one</th></tr>
+      <tr><td>Store</td><td><strong>TimescaleDB</strong> <span style="font-size:.9em">(PostgreSQL + PostGIS)</span></td>
+        <td>Registry, geospatial and time-series in <strong>one</strong> database, removes a
+          distributed-consistency problem we do not need</td></tr>
+      <tr><td>Plate search</td><td><strong>pg_trgm</strong></td>
+        <td>Sufficient at this scale; a search cluster is the scale path, not the starting point</td></tr>
+      <tr><td>Vectors</td><td><strong>pgvector</strong></td>
+        <td>Vehicle appearance search (DINOv2-small, 384 numbers) inside the database already present</td></tr>
+      <tr><td>Media</td><td><strong>MediaMTX</strong></td>
+        <td>RTSP in, WebRTC/HLS out, the relay the brief already anticipates</td></tr>
+      <tr><td>Events</td><td><strong>Redpanda</strong></td>
+        <td>Kafka wire protocol, single binary, no ZooKeeper</td></tr>
+      <tr><td>Routing</td><td><strong>OSRM</strong> + Gujarat OSM extract</td>
+        <td>Road-network snapping and travel-time plausibility</td></tr>
+      <tr><td>API</td><td><strong>FastAPI</strong> + OpenAPI</td>
+        <td>Documented and browsable, integration-ready by construction</td></tr>
+      <tr><td>Map</td><td><strong>MapLibre GL</strong></td>
+        <td>GPU-rendered. Leaflet's DOM markers do not survive statewide density, and
+          80,000 points is the claim</td></tr>
+    </table>
+    <p class="note"><b>Justified deviations from the suggested stack:</b> MapLibre over Leaflet,
+      TimescaleDB + trigram over Elasticsearch, Redpanda over Kafka. Each is stated with its
+      reason, because unexplained deviation is penalised and justified deviation is not.</p>
+  </div>
+</section>
+
+<!-- 14 ─────────────────────────────────── E7 SCALE -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>7</b> of 8</span><span class="no">16</span></div>
+  <div class="body">
+    <p class="kicker">Scalability at 80,000 cameras</p>
+    <h2>The sizing number is measured, and so is what breaks it</h2>
+    <div class="quote">
+      <p><strong>50 to 57 cameras per 20-core box.</strong> At 57 cameras, recognition p50 was
+        <span class="num good">624 ms</span> with a healthy 6.1% shed. At 76 cameras the same box
+        shed <span class="num bad">94.7%</span> and p50 rose to 3.4 s.</p>
+    </div>
+    <div class="cols c2" style="margin-top:1.4cqw">
+      <div class="grow">
+        <table>
+          <tr><th>Quantity</th><th style="width:34%">Arithmetic</th><th class="r">Result</th></tr>
+          <tr><td>Nodes for 80,000 cameras</td><td>80,000 ÷ 50</td><td class="r"><span class="num">1,600</span></td></tr>
+          <tr><td>Per district</td><td>1,600 ÷ 33</td><td class="r"><span class="num">~48</span></td></tr>
+          <tr><td>Sightings/day</td><td>80,000 × 1.5/min × 1,440</td><td class="r"><span class="num">~173 M</span></td></tr>
+          <tr><td>Compressed rows/day</td><td>173 M × 300 B ÷ 10</td><td class="r"><span class="num">~5 GB</span></td></tr>
+          <tr><td>Metadata backhaul</td><td>80,000 × 0.5 kbit/s</td><td class="r"><span class="num">~40 Mbit/s</span></td></tr>
+        </table>
+      </div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:1.1cqw">
+        <div class="card"><span class="tag">Why 1,600 is not frightening</span>
+          <h3>Arithmetic, not a distributed-systems project</h3>
+          <p>Workers claim a shard with a database advisory lock, <strong>no orchestrator, no
+            leader election, no per-replica configuration</strong>, and a crashed worker returns
+            its shard the instant its connection drops.</p></div>
+        <div class="card"><span class="tag">And what would move it</span>
+          <h3>Cross-camera GPU batching</h3>
+          <p>Plausibly 3 to 5x per node, taking 1,600 toward ~400. It is an architecture change, not
+            a flag, so it is <strong>named, not claimed</strong>.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 ─────────────────────────────────── E7 SECURITY -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>7</b> of 8</span><span class="no">17</span></div>
+  <div class="body">
+    <p class="kicker">Interoperability, security, deployment</p>
+    <h2>What is built, and what is designed, labelled</h2>
+    <div class="cols c3" style="margin-top:1.4cqw">
+      <div class="grow">
+        <p class="kicker">Interoperability</p>
+        <ul>
+          <li>ONVIF · RTSP · HLS · WebRTC</li>
+          <li>OpenAPI, browsable on the running instance</li>
+          <li><strong>GeoJSON</strong> for everything geographic</li>
+          <li>Kafka wire protocol</li>
+          <li>One provider interface per watchlist source</li>
+        </ul>
+        <p class="note" style="margin-top:1.3cqw">No proprietary interface between our own layers.</p>
+      </div>
+      <div class="grow">
+        <p class="kicker">Security: built</p>
+        <ul>
+          <li>Credentials <strong>never</strong> in the registry; a URL with credentials embedded
+            is rejected with <span class="num">422</span></li>
+          <li>Role- and department-scoped access derived from <strong>registry ownership</strong>,
+      data-driven, not a code path per department</li>
+          <li><strong>Immutable audit</strong> of every view, search, query and export</li>
+          <li>A <strong>case reference</strong> binding the purpose of each query</li>
+        </ul>
+      </div>
+      <div class="grow">
+        <p class="kicker">Security: design</p>
+        <ul>
+          <li class="warn">Managed secret vault with rotation</li>
+          <li class="warn">mTLS between services</li>
+          <li class="warn">Camera-VLAN segmentation</li>
+          <li class="warn">Active-passive DR</li>
+        </ul>
+        <p class="note" style="margin-top:1.3cqw"><b>Named, not implied.</b> A proposal that blurs
+          built and specified cannot be trusted on either.</p>
+      </div>
+    </div>
+    <div class="hr"></div>
+    <p style="margin-top:1.2cqw"><strong>Privacy under the DPDP Act 2023.</strong> Metadata-by-default
+      <em>is</em> the primary control: the platform's default state is that no personal video has
+      moved anywhere. Facial recognition ships <strong>disabled</strong>, requires per-query case
+      binding and audit to enable, and is demonstrated only on synthetic faces.</p>
+  </div>
+</section>
+
+<!-- 16 ─────────────────────────────────── E8 BENEFITS -->
+<section class="slide">
+  <div class="rail"><span class="el">Element <b>8</b> of 8</span><span class="no">18</span></div>
+  <div class="body">
+    <p class="kicker acc">Expected operational benefits and impact on policing</p>
+    <h2>What changes in how the work is done</h2>
+    <table>
+      <tr><th style="width:16%"></th><th style="width:34%">Today</th><th>With this platform</th></tr>
+      <tr><td><strong>Time to locate a suspect vehicle</strong></td>
+        <td>Camera-by-camera manual review, department by department, over hours</td>
+        <td>A plate query returns a timestamped route,
+      <span class="num good">26 ms</span> p50, 31 ms p95</td></tr>
+      <tr><td><strong>Cross-department visibility</strong></td>
+        <td>A Home Department investigator sees nothing from RTO or Food &amp; Civil Supplies cameras</td>
+        <td>The registry makes coverage <strong>discoverable</strong>, you can learn a camera
+          exists before negotiating access to it</td></tr>
+      <tr><td><strong>Posture</strong></td>
+        <td>Reactive: footage is reviewed after the incident</td>
+        <td><strong>Proactive</strong>, a hit surfaces while the vehicle is still moving.
+          <span class="num good">1.04 s</span></td></tr>
+      <tr><td><strong>Manpower</strong></td>
+        <td>Operators watch video walls</td>
+        <td>Operators <strong>triage prioritised alerts</strong> that carry their own evidence bundle</td></tr>
+      <tr><td><strong>Infrastructure planning</strong></td>
+        <td>Where the next camera goes is a judgement call</td>
+        <td><strong>Gap analysis over the road network.</strong> Measured on NH-48:
+          <span class="num">1.27%</span> of 237 km covered, <span class="num">51</span> gaps,
+          largest <span class="num">4.76 km</span></td></tr>
+    </table>
+    <p class="note"><b>The structural impact:</b> the State gains a searchable index of vehicle
+      movement that already contains the answer to a question nobody has asked yet. <b>And a cost
+      impact:</b> ~26 PB and 240 Gbit/s of central infrastructure is <b>not purchased</b>, and 26
+      departments' existing investments keep running.</p>
+  </div>
+</section>
+<section class="slide">
+  <div class="rail"><span class="el">Working platform</span><span class="no">19</span></div>
+  <div class="body">
+    <p class="kicker">Not a mock-up</p>
+    <h2 style="font-size:2.1cqw">81 cameras onboarded statewide, every one resolved from the
+      government catalogue</h2>
+    <div class="cols" style="grid-template-columns:1.7fr 1fr;margin-top:1cqw;min-height:0;gap:1.8cqw">
+      <figure class="fig fit">
+        <img src="statewide-81-cameras.png"
+             alt="Operator map of Gujarat showing 81 registered cameras, 78 online">
+        <figcaption><b>Registry and GIS console.</b> Positions resolve from the catalogue's place
+          names through a gazetteer, never from a camera number, because the reference says camera
+          ids can change. Health is probed, so a login page does not count as online.</figcaption>
+      </figure>
+      <figure class="fig fit">
+        <img src="m2-live-view-panel.png"
+             alt="Camera detail panel: live video with a readable plate, first frame in 0.57 seconds">
+        <figcaption><b>Live view, pulled on demand.</b> First frame in 0.57 s. The relay starts
+          when an operator opens the camera and is reaped 45 s after the last viewer, so an
+          unwatched camera costs only its metadata.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- 17 ─────────────────────────────────── EVIDENCE -->
+<section class="slide dark">
+  <div class="rail"><span class="el">Evidence</span><span class="no">20</span></div>
+  <div class="body">
+    <p class="kicker">Measured end-to-end performance</p>
+    <h2 style="font-size:2.6cqw">Every number here is live in the platform's own UI, not a
+      rehearsal figure</h2>
+    <table>
+      <tr><th></th><th class="r">Budget</th><th class="r">Measured</th><th class="r">Headroom</th></tr>
+      <tr><td><strong>Vehicle trace across the state</strong></td><td class="r">2 s</td>
+        <td class="r"><span class="num good">26 ms</span> p50 · 31 ms p95</td><td class="r"><span class="num">77×</span></td></tr>
+      <tr><td><strong>Detection → alert</strong></td><td class="r">5 s</td>
+        <td class="r"><span class="num good">1.04 s</span></td><td class="r"><span class="num">4.8×</span></td></tr>
+      <tr><td><strong>Camera onboarding</strong></td><td class="r">30 s</td>
+        <td class="r"><span class="num good">5.1 s</span></td><td class="r"><span class="num">5.9×</span></td></tr>
+      <tr><td><strong>Click → live video, cold camera</strong></td><td class="r">n/a</td>
+        <td class="r"><span class="num good">0.23 s</span></td><td class="r">n/a</td></tr>
+      <tr><td><strong>Concurrent streams held</strong></td><td class="r">50</td>
+        <td class="r"><span class="num good">50 for 15 min, 0 restarts</span></td><td class="r">n/a</td></tr>
+      <tr><td><strong>Throughput</strong></td><td class="r">n/a</td>
+        <td class="r"><span class="num">104 sightings/min</span> across 71 cameras</td><td class="r">n/a</td></tr>
+      <tr><td><strong>Plate accuracy, ANPR-grade</strong></td><td class="r">n/a</td>
+        <td class="r"><span class="num good">82.4%</span> exact · 95.1% within 2</td><td class="r">n/a</td></tr>
+    </table>
+    <p class="note"><b>869 automated tests.</b> Every figure traces to a dated entry recording the
+      method that produced it, which is what makes it checkable rather than asserted.</p>
+  </div>
+</section>
+<section class="slide">
+  <div class="rail"><span class="el">Evidence</span><span class="no">21</span></div>
+  <div class="body">
+    <p class="kicker">The platform measures itself</p>
+    <h2 style="font-size:2.1cqw">The previous slide is a screen in the product, not a number we
+      typed into a deck</h2>
+    <figure class="fig fit">
+      <img src="m7-performance.png"
+           alt="Performance page: 78 streams, 18.8 fps, 50.3 detections per minute, 1.08 s alert p95">
+    </figure>
+    <p class="note"><b>The third panel is the one to read.</b> It reports work deliberately not
+      done: 94.9% of OCR attempts shed at 76 cameras on a 20-core box. That is the capacity limit
+      stated as a measurement, and it is why the honest sizing figure is 50 to 57 cameras per box
+      rather than 76.</p>
+  </div>
+</section>
+<section class="slide dark">
+  <div class="rail"><span class="el">Evaluation</span><span class="no">22</span></div>
+  <div class="body">
+    <p class="kicker">Common evaluation areas</p>
+    <h2 style="font-size:2.2cqw">The seven criteria, and where the evidence for each one sits</h2>
+    <table class="crit">
+      <tr><th></th><th>Criterion</th><th>Evidence in this submission</th></tr>
+      <tr><td>1</td><td><strong>Successful test case</strong><br>Onboarding and operation on the
+        government feed</td>
+        <td>81 cameras onboarded by catalogue reconciliation, 30 of them government. Live view and
+          recorded playback both demonstrated; ANPR output written to the index.</td></tr>
+      <tr><td>2</td><td><strong>Solution presentation</strong><br>Problem understanding, model,
+        justification</td>
+        <td>This deck. Element 1 states the model and why Model 4 was rejected with the
+          arithmetic; slide 2 states the constraint the whole design follows from.</td></tr>
+      <tr><td>3</td><td><strong>Solution architecture</strong><br>Soundness, feasibility,
+        security, interoperability</td>
+        <td>Six-layer HLD, the workflow diagram on slide 9, and the interoperability and security
+          slide. Full design in the submitted HLD document.</td></tr>
+      <tr><td>4</td><td><strong>Working platform and demonstration</strong></td>
+        <td>Slides 19 and 21 are screens from the running platform. Demonstrated on both our own
+          simulated estate and the government feed.</td></tr>
+      <tr><td>5</td><td><strong>Video analytics output</strong><br>ANPR, detection, timestamps,
+        reports</td>
+        <td>ANPR with per-condition accuracy, vehicle detection and tracking, tamper detection,
+          appearance attributes, and CSV and PDF detection reports carrying the evidence crop.</td></tr>
+      <tr><td>6</td><td><strong>Scalability and PoC readiness</strong><br>Toward 80,000 cameras</td>
+        <td>Measured capacity per box, sharding by advisory lock with no orchestrator, and the
+          shed rate published rather than hidden. Slides 16 and 21.</td></tr>
+      <tr><td>7</td><td><strong>Submission completeness</strong></td>
+        <td>Deck, HLD, workflow diagram, demonstration video, public repository, live instance
+          with a viewer account, and API documentation.</td></tr>
+    </table>
+    <p class="note"><b>Nothing in this column is aspirational.</b> Where a capability is designed
+      rather than built, it is labelled as such on slide 17, and the limits we know about are
+      stated on the final slide rather than left for an evaluator to find.</p>
+  </div>
+</section>
+<section class="slide">
+  <div class="rail"><span class="el">Evaluation</span><span class="no">23</span></div>
+  <div class="body">
+    <p class="kicker">Bonus considerations</p>
+    <h2>Each of the six, and what we built against it</h2>
+    <div class="cols c3" style="margin-top:1.3cqw">
+      <div class="card">
+        <span class="tag">Novel hybrid architecture</span>
+        <h3>All three models, not a choice between them</h3>
+        <p>Registry as control plane, direct feed access for analytics, adapters for everything
+          that does not fit. The registry is mandatory; the other two are how it earns its keep.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Cross-camera correlation</span>
+        <h3>Route reconstruction in 26 ms</h3>
+        <p>Road-snapped through OSRM, with per-hop plausibility. An impossible hop splits the
+          journey and flags a probable cloned plate rather than being discarded.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Analytics beyond ANPR</span>
+        <h3>Four more, all shipped</h3>
+        <p>Vehicle detection and tracking, camera tamper detection, appearance attributes for
+          feeds that cannot resolve a plate, and face detection as a disabled plugin proving the
+          pipeline takes modules.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Edge and bandwidth</span>
+        <h3>About 0.5 kbit/s per camera</h3>
+        <p>Analytics run beside the camera and only metadata crosses the link. Video is pulled on
+          demand and released 45 s after the last viewer, so cost is per viewer, not per camera.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Security and privacy</span>
+        <h3>Audited, role-split, crops not frames</h3>
+        <p>Every view, search, trace and export is recorded in an append-only log. Two roles, and
+          the evaluation account is read-only by API enforcement. One 8 kB evidence crop per
+          sighting; no recorded video.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Dashboards and APIs</span>
+        <h3>Integration-ready by default</h3>
+        <p>GIS console, alert desk, journey explorer and a live performance page. Every capability
+          is an OpenAPI-documented endpoint, with GeoJSON for anything geographic.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 ─────────────────────────────────── LIMITS -->
+<section class="slide">
+  <div class="rail"><span class="el">Credibility</span><span class="no">24</span></div>
+  <div class="body">
+    <p class="kicker">What we do not claim</p>
+    <h2>A proposal that lists only strengths cannot be checked</h2>
+    <div class="hr acc"></div>
+    <ul style="margin-top:1.5cqw">
+      <li class="warn"><strong>All 30 government cameras fall below ANPR grade, and none of
+        the 50 simulated ones do</strong>, the platform grades this itself, from crops it
+        measured. Their crops average <strong>66 px</strong> across, about 7 px per character. They
+        are correctly deployed situational-awareness views. Every accuracy figure here is
+        <strong>scoped to ANPR-grade cameras</strong>. Measured live on 14 Sep with the learned
+        detectors: 344 real vehicles in 10 minutes, boxes on real plates, <strong>median plate width
+        29 px</strong> and <strong>0 valid plates</strong> from any reader we tested; the report lists
+        detected vehicles with type, colour and time.</li>
+      <li class="warn"><strong>Night accuracy was 58.6% exact with Tesseract.</strong> docTR, now the
+        default, finds 62% of night plates against 35% on the same clips.</li>
+      <li class="warn"><strong>A vehicle id joined by appearance is a lead, not an
+        identification.</strong> 43 links checked by eye on the government cameras: 34 right, 7
+        wrong, 2 unclear; at the shipped threshold 16 of 17 were right. <strong>None crossed
+        cameras</strong>, so there it re-finds a vehicle on one camera rather than following it
+        between cameras. The plate trace never follows an appearance link.</li>
+      <li class="warn"><strong>Edge autonomy, push notification routing, mTLS and the vendor VMS
+        adapters are designed, not built.</strong> They are in the technical proposal because the
+        architecture is incomplete without them, and labelled because a proposal that blurs built
+        and specified cannot be trusted on either.</li>
+      <li class="warn"><strong>Watchlist data is representative, not live.</strong> No team has
+        live VAHAN access for a hackathon.</li>
+      <li class="warn"><strong>The 1,600-node figure assumes traffic like the measured
+        corridor's.</strong> A quiet road costs less, a toll plaza more, and the platform reports
+        sightings-per-camera-per-minute <em>per camera</em>, so the model stays checkable at
+        rollout rather than only at design time.</li>
+    </ul>
+    <p class="note"><b>Saying this first is worth more than being asked.</b> It is also what makes
+      every other number in this deck credible.</p>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var btn = document.getElementById('present');
+  var hint = document.getElementById('hint');
+  var i = 0, on = false;
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+    hint.textContent = 'Slide ' + (i + 1) + ' of ' + slides.length + ' · ← → to move, Esc to exit';
+  }
+  function enter() {
+    on = true; document.body.classList.add('present'); btn.textContent = 'Exit';
+    var seen = slides.findIndex(function (s) { return s.getBoundingClientRect().top > -200; });
+    show(seen < 0 ? 0 : seen);
+  }
+  function exit() {
+    on = false; document.body.classList.remove('present'); btn.textContent = 'Present';
+    slides.forEach(function (s) { s.classList.remove('on'); });
+    hint.textContent = slides.length + ' slides · scroll to review';
+    slides[i].scrollIntoView({ block: 'start' });
+  }
+  btn.addEventListener('click', function () { on ? exit() : enter(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'p' && !on && !e.metaKey && !e.ctrlKey) { enter(); return; }
+    if (!on) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); show(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Escape') { exit(); }
+  });
+})();
+</script>

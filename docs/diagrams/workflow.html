@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gujarat CCTV Integration Platform — workflow</title>
+<!-- Rendered by `make diagram` to dist/gujarat-cctv-workflow.{png,pdf}. Self-contained: no network. -->
+<style>
+  @page { size: 1600px 1000px; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #FAFAF8; }
+  svg { display: block; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; }
+  .band { fill: #F0F3F5; }
+  .lane { font-size: 13px; font-weight: 700; letter-spacing: .08em; fill: #5A6773; }
+  .box { fill: #FFFFFF; stroke: #C5CED6; stroke-width: 1.5; }
+  .key { fill: #FFF4D6; stroke: #C28A00; stroke-width: 2; }
+  .t { font-size: 17px; font-weight: 700; fill: #15202B; }
+  .s { font-size: 13px; fill: #54616D; }
+  .arrow { stroke: #56636F; stroke-width: 2; fill: none; marker-end: url(#head); }
+  .dash { stroke: #C28A00; stroke-width: 2; fill: none; stroke-dasharray: 7 6; marker-end: url(#headacc); }
+  .lbl { font-size: 12.5px; fill: #54616D; font-style: italic; }
+  .lblacc { font-size: 12.5px; fill: #9A6C00; font-weight: 700; }
+  .note { fill: #FFFFFF; stroke: #C5CED6; stroke-width: 1.2; }
+  .nt { font-size: 14px; fill: #15202B; }
+</style>
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#56636F"/></marker>
+    <marker id="headacc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#C28A00"/></marker>
+  </defs>
+
+  <text x="24" y="44" style="font-size:26px;font-weight:700;fill:#15202B">Gujarat CCTV Integration Platform — from camera to alert and trace</text>
+  <text x="24" y="68" class="s">Hybrid architecture: Model 1 registry as control plane · Model 2 direct feed access · Model 3 adapters · analytics at the edge</text>
+
+  <!-- ============ Lane 1: integration ============ -->
+  <rect class="band" x="12" y="84" width="1576" height="252" rx="10"/>
+  <text class="lane" x="26" y="112">1 · INTEGRATION</text>
+
+  <rect class="box" x="170" y="104" width="220" height="92" rx="10"/>
+  <text class="t" x="186" y="138">Departmental</text>
+  <text class="t" x="186" y="158">cameras / VMS</text>
+  <text class="s" x="186" y="182">RTSP · ONVIF · HLS · vendor</text>
+
+  <rect class="box" x="440" y="104" width="230" height="92" rx="10"/>
+  <text class="t" x="456" y="138">Adapters</text>
+  <text class="s" x="456" y="162">one interface per source type</text>
+  <text class="s" x="456" y="180">credentials from environment</text>
+
+  <rect class="key" x="720" y="104" width="300" height="92" rx="10"/>
+  <text class="t" x="736" y="138">Camera Registry + GIS map</text>
+  <text class="s" x="736" y="162">Model 1 · PostGIS · single source of truth</text>
+  <text class="s" x="736" y="180">onboarding from catalogue /cameras.json</text>
+
+  <rect class="box" x="1070" y="104" width="230" height="92" rx="10"/>
+  <text class="t" x="1086" y="138">Health prober</text>
+  <text class="s" x="1086" y="162">online · offline · unstable</text>
+  <text class="s" x="1086" y="180">a login page is not "online"</text>
+
+  <rect class="box" x="720" y="226" width="300" height="84" rx="10"/>
+  <text class="t" x="736" y="258">Relay · MediaMTX</text>
+  <text class="s" x="736" y="282">pulls video only while someone watches</text>
+
+  <rect class="box" x="1070" y="226" width="230" height="84" rx="10"/>
+  <text class="t" x="1086" y="258">Browser live view</text>
+  <text class="s" x="1086" y="282">WebRTC / HLS, on demand</text>
+
+  <path class="arrow" d="M390,150 L436,150"/>
+  <path class="arrow" d="M670,150 L716,150"/>
+  <path class="arrow" d="M1020,150 L1066,150"/>
+  <path class="arrow" d="M555,196 L555,268 L716,268"/>
+  <path class="arrow" d="M1020,268 L1066,268"/>
+
+  <!-- ============ Lane 2: edge analytics ============ -->
+  <rect class="band" x="12" y="350" width="1576" height="196" rx="10"/>
+  <text class="lane" x="26" y="378">2 · EDGE ANALYTICS</text>
+  <text class="s" x="26" y="398">next to the camera</text>
+
+  <!-- stream from adapters into capture -->
+  <path class="arrow" d="M470,196 L470,214 L400,214 L400,340 L270,340 L270,408"/>
+
+  <rect class="box" x="170" y="412" width="200" height="100" rx="10"/>
+  <text class="t" x="186" y="446">Capture</text>
+  <text class="s" x="186" y="470">RTSP over TCP</text>
+  <text class="s" x="186" y="488">timing from video PTS</text>
+
+  <rect class="box" x="406" y="412" width="200" height="100" rx="10"/>
+  <text class="t" x="422" y="446">Motion tracking</text>
+  <text class="s" x="422" y="470">one track per vehicle</text>
+  <text class="s" x="422" y="488">sampling follows the scene</text>
+
+  <rect class="box" x="642" y="412" width="200" height="100" rx="10"/>
+  <text class="t" x="658" y="446">Plate locator</text>
+  <text class="s" x="658" y="470">searches inside the</text>
+  <text class="s" x="658" y="488">vehicle box only</text>
+
+  <rect class="key" x="878" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="894" y="446">Reader: docTR</text>
+  <text class="s" x="894" y="470">CPU, Tesseract fallback</text>
+  <text class="s" x="894" y="488">PaddleOCR-VL when boosted</text>
+
+  <rect class="box" x="1124" y="412" width="200" height="100" rx="10"/>
+  <text class="t" x="1140" y="446">Vote + normalise</text>
+  <text class="s" x="1140" y="470">many reads → one plate</text>
+  <text class="s" x="1140" y="488">letters/digits fixed by slot</text>
+
+  <rect class="key" x="1360" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="1376" y="446">Sightings</text>
+  <text class="s" x="1376" y="470">TimescaleDB</text>
+  <text class="s" x="1376" y="488">every read stored</text>
+
+  <path class="arrow" d="M370,462 L402,462"/>
+  <path class="arrow" d="M606,462 L638,462"/>
+  <path class="arrow" d="M842,462 L874,462"/>
+  <path class="arrow" d="M1088,462 L1120,462"/>
+  <path class="arrow" d="M1324,462 L1356,462"/>
+
+  <!-- ============ Lane 3: two separate paths ============ -->
+  <rect class="band" x="12" y="560" width="1576" height="322" rx="10"/>
+  <text class="lane" x="26" y="600">3 · TWO PATHS</text>
+
+  <!-- bus from sightings -->
+  <path style="stroke:#56636F;stroke-width:2;fill:none" d="M1465,512 L1465,576 L156,576 L156,818"/>
+  <path class="arrow" d="M156,676 L166,676"/>
+  <path class="arrow" d="M156,818 L166,818"/>
+  <text class="lbl" x="560" y="569">every sighting, as it is written</text>
+
+  <text class="lane" x="26" y="664" style="fill:#15202B">LIVE</text>
+  <text class="lane" x="26" y="682" style="fill:#15202B">ALERTS</text>
+
+  <rect class="box" x="170" y="632" width="290" height="88" rx="10"/>
+  <text class="t" x="186" y="666">Watchlist match</text>
+  <text class="s" x="186" y="690">in the same transaction as the write</text>
+
+  <rect class="box" x="510" y="632" width="290" height="88" rx="10"/>
+  <text class="t" x="526" y="666">Match tier</text>
+  <text class="s" x="526" y="690">confirmed · probable · possible</text>
+
+  <rect class="box" x="850" y="632" width="290" height="88" rx="10"/>
+  <text class="t" x="866" y="666">Alert console</text>
+  <text class="s" x="866" y="690">evidence image + map pin · ~1 s</text>
+
+  <path class="arrow" d="M460,676 L506,676"/>
+  <path class="arrow" d="M800,676 L846,676"/>
+
+  <text class="lane" x="26" y="806" style="fill:#15202B">LATER</text>
+  <text class="lane" x="26" y="824" style="fill:#15202B">TRACE</text>
+
+  <rect class="box" x="170" y="774" width="290" height="88" rx="10"/>
+  <text class="t" x="186" y="808">Operator enters a plate</text>
+  <text class="s" x="186" y="832">hours or days later</text>
+
+  <rect class="box" x="510" y="774" width="290" height="88" rx="10"/>
+  <text class="t" x="526" y="808">Journey query</text>
+  <text class="s" x="526" y="832">over all sightings · 26 ms</text>
+
+  <rect class="box" x="850" y="774" width="290" height="88" rx="10"/>
+  <text class="t" x="866" y="808">Road snap + plausibility</text>
+  <text class="s" x="866" y="832">OSRM · impossible hop = clone flag</text>
+
+  <rect class="box" x="1190" y="774" width="380" height="88" rx="10"/>
+  <text class="t" x="1206" y="808">Route on map + PDF/CSV report</text>
+  <text class="s" x="1206" y="832">plate · time · camera · location · evidence</text>
+
+  <path class="arrow" d="M460,818 L506,818"/>
+  <path class="arrow" d="M800,818 L846,818"/>
+  <path class="arrow" d="M1140,818 L1186,818"/>
+
+  <!-- operator OCR boost back to the reader -->
+  <path class="dash" d="M1380,774 L1380,742 L1220,742 L1220,548 L983,548 L983,516"/>
+  <text class="lblacc" x="1232" y="736">operator OCR boost: POST /api/ocr-boosts</text>
+  <text class="lblacc" x="1000" y="542">cameras near the last sighting → PaddleOCR-VL</text>
+
+  <!-- ============ notes ============ -->
+  <rect class="note" x="12" y="900" width="770" height="80" rx="10"/>
+  <text class="nt" x="30" y="934"><tspan font-weight="700">Only metadata crosses the network</tspan> (~0.5 kbit/s per camera).</text>
+  <text class="nt" x="30" y="958">Video moves only when someone watches.</text>
+
+  <rect class="note" x="818" y="900" width="770" height="80" rx="10"/>
+  <text class="nt" x="836" y="934"><tspan font-weight="700">Alerting and tracing never share code:</tspan> one runs on every write,</text>
+  <text class="nt" x="836" y="958">the other on an operator's query. Both read the same sightings.</text>
+</svg>
